@@ -7,24 +7,61 @@ dotenv.config();
 const client = require('twilio')(accountSid, authToken);
 const app = express();
 app.use(express.json());
-//test bio
-app.listen(process.env.SERVE_PORT, async (req, res) => {
+
+
+const fetchData = async () => {
     try {
         const response = await axios.get(process.env.BIO_URL);
-        const data = response.data;
+        return response.data;
+    } catch (error) {
+        console.error('Failed to fetch data:', error.message);
+        throw error;
+    }
+}
 
+const filterData = (data) => {
+    return data.filter(item => { item.name });
+};
+
+const sendMessage = async (filteredData) => {
+    try {
         const message = await client.messages.create({
-            body: data,
+            body: JSON.stringify(filteredData), // Adjust the message body as needed
             messagingServiceSid: process.env.MESSAGE_ID,
             to: process.env.BIO_TO
         });
 
         console.log(`Message SID: ${message.sid}`);
-        res.status(201).json({ message: `Message SID: ${message.sid}` });
+        return true; // Indicate success
     } catch (error) {
-        console.error("Failed to get data:", error);
-        res.status(404).json({ error: "Failed to send SMS" });
+        console.error('Failed to send SMS:', error.message);
+        return false; // Indicate failure
     }
+};
+const processDataAndSendMessage = async () => {
+    try {
+        const data = await fetchData();
 
+        if (data && data.length > 0) {
+            const filteredData = filterData(data);
+            const success = await sendMessage(filteredData);
+
+            if (!success) {
+                // Retry after a set time interval (e.g., 5 minutes)
+                setTimeout(processDataAndSendMessage, 2 * 60 * 1000);
+            }
+        } else {
+
+            console.log('No data to process.');
+        }
+    } catch (error) {
+        console.error('Error in processDataAndSendMessage:', error.message);
+        // Retry after a set time interval (e.g., 5 minutes)
+        setTimeout(processDataAndSendMessage, 2 * 60 * 1000);
+    }
+};
+//test bio
+app.listen(process.env.SERVE_PORT, async (req, res) => {
+    processDataAndSendMessage();
     console.log("Server is running... Port:", process.env.SERVE_PORT);
 });
